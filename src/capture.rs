@@ -1,6 +1,7 @@
 use crate::pipeline::{Pipeline, Stage};
 use anyhow::{Context, Result};
 use std::io::{Read, Write};
+use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -29,10 +30,30 @@ pub struct PipelineResult {
 /// Each stage is run as a subprocess via `sh -c`. Data is tee'd between
 /// stages: the output of stage N feeds into stage N+1 while also being
 /// captured into a buffer.
+/// Check if stdin is a pipe (data is being piped in).
+fn stdin_is_pipe() -> bool {
+    unsafe { libc::isatty(std::io::stdin().as_raw_fd()) == 0 }
+}
+
+/// Read all available data from stdin (non-blocking-ish).
+fn read_stdin_data() -> Option<Vec<u8>> {
+    if !stdin_is_pipe() {
+        return None;
+    }
+    let mut buf = Vec::new();
+    match std::io::stdin().lock().read_to_end(&mut buf) {
+        Ok(0) => None,
+        Ok(_) => Some(buf),
+        Err(_) => None,
+    }
+}
+
 pub fn execute(pipeline: &Pipeline) -> Result<PipelineResult> {
     let total_start = Instant::now();
     let mut stage_results = Vec::new();
-    let mut prev_output: Option<Vec<u8>> = None;
+
+    // If stdin is a pipe, read it and use as input to the first stage
+    let mut prev_output: Option<Vec<u8>> = read_stdin_data();
 
     for stage in &pipeline.stages {
         let start = Instant::now();
@@ -45,7 +66,7 @@ pub fn execute(pipeline: &Pipeline) -> Result<PipelineResult> {
         if prev_output.is_some() {
             cmd.stdin(Stdio::piped());
         } else {
-            cmd.stdin(Stdio::inherit());
+            cmd.stdin(Stdio::null());
         }
 
         let mut child = cmd

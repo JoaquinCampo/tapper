@@ -4,12 +4,14 @@ use anyhow::{bail, Result};
 pub struct Stage {
     pub index: usize,
     pub command: String,
+    #[allow(dead_code)]
     pub argv: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct Pipeline {
     pub stages: Vec<Stage>,
+    #[allow(dead_code)]
     pub raw: String,
 }
 

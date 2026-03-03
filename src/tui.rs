@@ -14,6 +14,14 @@ pub fn run(result: PipelineResult) -> Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
 
+    // Install Ctrl+C handler that restores the terminal before exiting
+    ctrlc::set_handler(move || {
+        // Best-effort terminal restore — ignore errors since we're in a signal handler
+        let _ = disable_raw_mode();
+        let _ = std::io::stdout().execute(LeaveAlternateScreen);
+        std::process::exit(0);
+    })?;
+
     let backend = CrosstermBackend::new(stdout());
     let mut terminal = Terminal::new(backend)?;
     let mut app = App::new(result);
@@ -151,6 +159,18 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_stages(frame: &mut Frame, app: &App, area: Rect) {
+    let max_lines = app
+        .result
+        .stages
+        .iter()
+        .map(|s| s.line_count)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    // Bar width budget: leave room for "     " prefix and a space after bar
+    let bar_max_width: usize = 12;
+
     let items: Vec<ListItem> = app
         .result
         .stages
@@ -183,8 +203,25 @@ fn draw_stages(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]);
 
+            // Mini bar chart showing relative output size
+            let bar_len = ((stage.line_count as f64 / max_lines as f64) * bar_max_width as f64)
+                .ceil() as usize;
+            let bar_len = bar_len.max(if stage.line_count > 0 { 1 } else { 0 });
+            let bar_filled: String = "█".repeat(bar_len);
+            let bar_empty: String = "░".repeat(bar_max_width.saturating_sub(bar_len));
+            let bar_color = if bar_len > bar_max_width * 3 / 4 {
+                Color::Cyan
+            } else if bar_len > bar_max_width / 3 {
+                Color::Blue
+            } else {
+                Color::DarkGray
+            };
+
             let stats = Line::from(vec![
                 Span::raw("     "),
+                Span::styled(bar_filled, Style::default().fg(bar_color)),
+                Span::styled(bar_empty, Style::default().fg(Color::Rgb(40, 40, 40))),
+                Span::raw(" "),
                 Span::styled(
                     format!("{} lines", stage.line_count),
                     Style::default().fg(Color::DarkGray),

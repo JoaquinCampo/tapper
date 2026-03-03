@@ -189,4 +189,39 @@ mod tests {
         let p = Pipeline::parse(r#"grep -E "pattern with spaces" file.txt"#).unwrap();
         assert_eq!(p.stages[0].argv, vec!["grep", "-E", "pattern with spaces", "file.txt"]);
     }
+
+    #[test]
+    fn test_single_quoted_pipe() {
+        let p = Pipeline::parse("echo 'a|b' | cat").unwrap();
+        assert_eq!(p.stages.len(), 2);
+        assert_eq!(p.stages[0].command, "echo 'a|b'");
+    }
+
+    #[test]
+    fn test_escaped_pipe() {
+        let p = Pipeline::parse(r"echo a\|b | cat").unwrap();
+        assert_eq!(p.stages.len(), 2);
+    }
+
+    #[test]
+    fn test_multiple_spaces() {
+        let p = Pipeline::parse("cat file  |  grep pattern  |  sort").unwrap();
+        assert_eq!(p.stages.len(), 3);
+        assert_eq!(p.stages[0].command, "cat file");
+        assert_eq!(p.stages[1].command, "grep pattern");
+    }
+
+    #[test]
+    fn test_empty_stage_error() {
+        assert!(Pipeline::parse("cat | | sort").is_err());
+    }
+
+    #[test]
+    fn test_stage_indices() {
+        let p = Pipeline::parse("a | b | c | d").unwrap();
+        assert_eq!(p.stages[0].index, 0);
+        assert_eq!(p.stages[1].index, 1);
+        assert_eq!(p.stages[2].index, 2);
+        assert_eq!(p.stages[3].index, 3);
+    }
 }
